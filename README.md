@@ -221,3 +221,7 @@ It is a **correctness monitor** for jobs you already run.
 - [x] Optional Slack alerts
 - [x] Missed run detection
 - [x] Duplicate ping protection
+
+## License
+
+AfterRun is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
