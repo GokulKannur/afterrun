@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	fmt.Println("BOOTING v7 - Idempotency Active...")
+	fmt.Println("BOOTING v10 - UI Fix Applied...")
 	if err := db.InitDB(); err != nil {
 		log.Fatal("Failed to connect to database: ", err)
 	}
@@ -36,8 +36,30 @@ func main() {
 	}()
 
 	r := gin.Default()
+	r.LoadHTMLGlob("templates/*")
+	r.Static("/static", "./static")
 
+	// Phase 1.x
 	r.POST("/ping/:ping_key", handlers.PingHandler)
+
+	// Phase 2.1: Read-Only UI
+	r.GET("/", handlers.ShowJobs)
+	r.GET("/jobs/:id", handlers.ShowJobDetail)
+
+	// Phase 2: Job Management API
+	api := r.Group("/api")
+	{
+		api.POST("/jobs", handlers.CreateJob)
+		api.GET("/jobs", handlers.ListJobs)
+		api.GET("/jobs/:id", handlers.GetJob)
+		api.DELETE("/jobs/:id", handlers.DeleteJob)
+
+		api.GET("/jobs/:id/runs", handlers.GetJobRuns)
+
+		api.POST("/jobs/:id/rules", handlers.CreateRule)
+		api.GET("/jobs/:id/rules", handlers.ListRules)
+		api.DELETE("/rules/:id", handlers.DeleteRule)
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {

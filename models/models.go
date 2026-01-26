@@ -5,10 +5,15 @@ import (
 )
 
 type Job struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	PingKey   string    `json:"ping_key"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	PingKey      string    `json:"ping_key"`
+	Schedule     string    `json:"schedule"`
+	Timezone     string    `json:"timezone"`
+	GraceMinutes int       `json:"grace_minutes"`
+	PingURL      string    `json:"ping_url,omitempty"` // Computed field
+	CreatedAt    time.Time `json:"created_at"`
+	LastRun      *JobRun   `json:"last_run,omitempty"` // For list view
 }
 
 type JobRun struct {
@@ -22,12 +27,13 @@ type JobRun struct {
 }
 
 type Rule struct {
-	ID             string  `json:"id"`
-	JobID          string  `json:"job_id"`
-	MetricName     string  `json:"metric_name"`
-	Operator       string  `json:"operator"`
-	ThresholdValue float64 `json:"threshold_value"`
-	Severity       string  `json:"severity"`
+	ID             string    `json:"id"`
+	JobID          string    `json:"job_id"`
+	MetricName     string    `json:"metric_name"`
+	Operator       string    `json:"operator"`
+	ThresholdValue float64   `json:"threshold_value"`
+	Severity       string    `json:"severity"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type Alert struct {

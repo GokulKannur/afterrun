@@ -1,0 +1,53 @@
+{{ template "header.html" . }}
+
+<div class="page-header">
+    <h2>All Jobs</h2>
+</div>
+
+<div class="card">
+    <table class="jobs-table">
+        <thead>
+            <tr>
+                <th>Status</th>
+                <th>Job Name</th>
+                <th>Last Run</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Jobs}}
+            <tr>
+                <td>
+                    {{if .LastRun}}
+                    {{if eq .LastRun.Status "ok"}}
+                    <span class="status-dot status-ok" title="OK"></span>
+                    {{else}}
+                    <span class="status-dot status-fail" title="Failed"></span>
+                    {{end}}
+                    {{else}}
+                    <span class="status-dot status-none" title="Never Ran"></span>
+                    {{end}}
+                </td>
+                <td class="job-name">{{.Name}}</td>
+                <td class="job-time">
+                    {{if .LastRun}}
+                    {{.LastRun.CreatedAt.Format "Jan 02, 15:04 MST"}}
+                    <div class="sub-text">{{.LastRun.DurationMs}}ms</div>
+                    {{else}}
+                    <span class="sub-text">Never</span>
+                    {{end}}
+                </td>
+                <td>
+                    <a href="/jobs/{{.ID}}" class="btn-link">View Details &rarr;</a>
+                </td>
+            </tr>
+            {{else}}
+            <tr>
+                <td colspan="4" class="empty-state">No jobs found.</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+{{ template "footer.html" . }}

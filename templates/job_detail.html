@@ -1,0 +1,66 @@
+{{ template "header.html" . }}
+
+<div class="page-header">
+    <a href="/" class="back-link">&larr; Back to Jobs</a>
+    <h2>{{.Job.Name}}</h2>
+</div>
+
+<div class="grid-layout">
+    <div class="card job-meta">
+        <h3>Configuration</h3>
+        <dl>
+            <dt>Ping URL</dt>
+            <dd><code class="copyable">{{.Job.PingURL}}</code></dd>
+
+            <dt>Schedule</dt>
+            <dd>{{if .Job.Schedule}}{{.Job.Schedule}}{{else}}<em>Not set</em>{{end}}</dd>
+
+            <dt>Timezone</dt>
+            <dd>{{.Job.Timezone}}</dd>
+
+            <dt>Grace Period</dt>
+            <dd>{{.Job.GraceMinutes}} min</dd>
+        </dl>
+    </div>
+
+    <div class="card">
+        <h3>Recent Runs</h3>
+        <table class="runs-table">
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Time</th>
+                    <th>Duration</th>
+                    <th>Metrics</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Runs}}
+                <tr>
+                    <td>
+                        {{if eq .Status "ok"}}
+                        <span class="badge badge-ok">OK</span>
+                        {{else}}
+                        <span class="badge badge-fail">FAIL</span>
+                        {{end}}
+                    </td>
+                    <td>{{.CreatedAt.Format "Jan 02, 15:04:05"}}</td>
+                    <td>{{.DurationMs}}ms</td>
+                    <td>
+                        <pre class="metric-json">{{.Metrics}}</pre>
+                        {{if .Stderr}}
+                        <div class="stderr-preview">stderr: {{.Stderr}}</div>
+                        {{end}}
+                    </td>
+                </tr>
+                {{else}}
+                <tr>
+                    <td colspan="4" class="empty-state">No runs recorded.</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{{ template "footer.html" . }}
