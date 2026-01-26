@@ -1,11 +1,18 @@
-CREATE TABLE jobs (
+-- Jobs Table
+CREATE TABLE IF NOT EXISTS jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     ping_key VARCHAR(64) UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE job_runs (
+-- Phase 2 Columns (Idempotent)
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS schedule VARCHAR(100);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS timezone VARCHAR(50) DEFAULT 'UTC';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS grace_minutes INT DEFAULT 30;
+
+-- Job Runs Table
+CREATE TABLE IF NOT EXISTS job_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
     status VARCHAR(20) NOT NULL,
@@ -15,7 +22,8 @@ CREATE TABLE job_runs (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE rules (
+-- Rules Table
+CREATE TABLE IF NOT EXISTS rules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
     metric_name VARCHAR(100) NOT NULL,
@@ -25,7 +33,8 @@ CREATE TABLE rules (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE alerts (
+-- Alerts Table
+CREATE TABLE IF NOT EXISTS alerts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID REFERENCES jobs(id),
     run_id UUID REFERENCES job_runs(id),
@@ -33,17 +42,16 @@ CREATE TABLE alerts (
     sent_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_job_runs_job_id ON job_runs(job_id);
-CREATE INDEX idx_job_runs_created_at ON job_runs(created_at DESC);
+-- Indexes (Idempotent via IF NOT EXISTS)
+CREATE INDEX IF NOT EXISTS idx_job_runs_job_id ON job_runs(job_id);
+CREATE INDEX IF NOT EXISTS idx_job_runs_created_at ON job_runs(created_at DESC);
 
--- Test Data
+-- Test Data (Only if empty, to avoid duplicates on restart)
 INSERT INTO jobs (name, ping_key) 
-VALUES ('Test Backup Job', 'test123');
+SELECT 'Test Backup Job', 'test123'
+WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE ping_key = 'test123');
 
 INSERT INTO rules (job_id, metric_name, operator, threshold_value)
-VALUES (
-  (SELECT id FROM jobs WHERE ping_key = 'test123'),
-  'rows_processed',
-  '==',
-  0
-);
+SELECT id, 'rows_processed', '==', 0
+FROM jobs WHERE ping_key = 'test123'
+AND NOT EXISTS (SELECT 1 FROM rules WHERE metric_name = 'rows_processed' AND job_id = (SELECT id FROM jobs WHERE ping_key = 'test123'));

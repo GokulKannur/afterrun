@@ -1,0 +1,29 @@
+
+
+services:
+  db:
+    image: postgres:15
+    container_name: afterrun-db
+    environment:
+      POSTGRES_DB: cronmonitor
+      POSTGRES_USER: afterrun
+      POSTGRES_PASSWORD: afterrun
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    container_name: afterrun-app
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgres://afterrun:afterrun@db:5432/cronmonitor?sslmode=disable
+      PORT: 8080
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

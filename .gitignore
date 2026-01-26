@@ -30,3 +30,6 @@ out.log
 # IDE specific files
 .vscode/
 .idea/
+
+# Docker
+pgdata/

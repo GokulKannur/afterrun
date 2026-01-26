@@ -8,6 +8,19 @@ AfterRun tells you whether the job actually did useful work.
 
 This project exists because “it ran” is not the same as “it worked”.
 
+## Quick start (Docker)
+
+Requirements:
+- Docker
+- Docker Compose
+
+```bash
+git clone https://github.com/GokulKannur/afterrun.git
+cd afterrun
+docker compose up --build
+```
+The UI will be available at [http://localhost:8080](http://localhost:8080).
+
 ---
 
 ## The problem

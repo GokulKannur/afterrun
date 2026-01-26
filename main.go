@@ -12,11 +12,24 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func runMigrations() {
+	sqlBytes, err := os.ReadFile("schema.sql")
+	if err != nil {
+		log.Fatal("Failed to read schema.sql:", err)
+	}
+
+	if _, err := db.GetDB().Exec(string(sqlBytes)); err != nil {
+		log.Fatal("Failed to apply schema:", err)
+	}
+	log.Println("Database schema verified")
+}
+
 func main() {
-	fmt.Println("BOOTING v10 - UI Fix Applied...")
+	fmt.Println("BOOTING v11 - Docker Ready...")
 	if err := db.InitDB(); err != nil {
 		log.Fatal("Failed to connect to database: ", err)
 	}
+	runMigrations()
 
 	// Phase 1.3: Background Missed Run Check
 	go func() {
