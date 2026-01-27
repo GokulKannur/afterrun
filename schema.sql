@@ -55,3 +55,27 @@ INSERT INTO rules (job_id, metric_name, operator, threshold_value)
 SELECT id, 'rows_processed', '==', 0
 FROM jobs WHERE ping_key = 'test123'
 AND NOT EXISTS (SELECT 1 FROM rules WHERE metric_name = 'rows_processed' AND job_id = (SELECT id FROM jobs WHERE ping_key = 'test123'));
+
+-- Phase 3.5: Stabilization & Prep (Unused Tables)
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    stripe_customer_id VARCHAR(255),
+    subscription_tier VARCHAR(50) DEFAULT 'free',
+    subscription_status VARCHAR(50) DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+
+CREATE TABLE IF NOT EXISTS baselines (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
+    metric_name VARCHAR(100) NOT NULL,
+    p50 DOUBLE PRECISION,
+    p95 DOUBLE PRECISION,
+    p99 DOUBLE PRECISION,
+    sample_size INT,
+    updated_at TIMESTAMP DEFAULT NOW()
+);

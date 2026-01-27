@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cronmonitor/config"
 	"cronmonitor/db"
 	"cronmonitor/handlers"
 	"cronmonitor/services"
@@ -25,11 +26,21 @@ func runMigrations() {
 }
 
 func main() {
-	fmt.Println("BOOTING v11 - Docker Ready...")
+	fmt.Println("BOOTING v12 - Phase 3.5 Ready...")
 	if err := db.InitDB(); err != nil {
 		log.Fatal("Failed to connect to database: ", err)
 	}
 	runMigrations()
+
+	// Phase 3.5: Feature Flags
+	features := config.LoadFeatures()
+	log.Printf(
+		"Features: auth=%v billing=%v baselines=%v write_ui=%v",
+		features.AuthEnabled,
+		features.BillingEnabled,
+		features.BaselinesEnabled,
+		features.WriteUIEnabled,
+	)
 
 	// Phase 1.3: Background Missed Run Check
 	go func() {
@@ -72,6 +83,10 @@ func main() {
 		api.POST("/jobs/:id/rules", handlers.CreateRule)
 		api.GET("/jobs/:id/rules", handlers.ListRules)
 		api.DELETE("/rules/:id", handlers.DeleteRule)
+
+		// Phase 3.5: Stats (Read-Only)
+		api.GET("/stats/overview", handlers.GetStatsOverview)
+		api.GET("/stats/job/:id", handlers.GetJobStats)
 	}
 
 	port := os.Getenv("PORT")
