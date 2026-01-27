@@ -9,11 +9,15 @@ import (
 )
 
 func CreateRule(c *gin.Context) {
+	userID, _ := c.Get("userID")
 	jobID := c.Param("id")
 
-	// Verify job exists (Foreign key constraint handles this usually, but good for validation msg)
-	// We'll rely on DB constraint for MVP speed, or check?
-	// Prompt says "Handle all errors gracefully". DB FK error is fine, but checking is nicer.
+	// Verify Ownership
+	var dummyID string
+	if err := db.GetDB().QueryRow("SELECT id FROM jobs WHERE id = $1 AND user_id = $2", jobID, userID).Scan(&dummyID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Job not found"})
+		return
+	}
 
 	var req struct {
 		MetricName     string  `json:"metric_name"`
@@ -27,23 +31,6 @@ func CreateRule(c *gin.Context) {
 		return
 	}
 
-	if req.MetricName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "metric_name is required"})
-		return
-	}
-
-	validOps := map[string]bool{"==": true, "!=": true, "<": true, ">": true}
-	if !validOps[req.Operator] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid operator. Must be ==, !=, <, >"})
-		return
-	}
-
-	validSev := map[string]bool{"warning": true, "critical": true}
-	if !validSev[req.Severity] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid severity. Must be warning or critical"})
-		return
-	}
-
 	var ruleID string
 	var createdAt string
 	err := db.GetDB().QueryRow(`
@@ -53,7 +40,7 @@ func CreateRule(c *gin.Context) {
 	`, jobID, req.MetricName, req.Operator, req.ThresholdValue, req.Severity).Scan(&ruleID, &createdAt)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create rule (Job might not exist)"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create rule (Job might not exist or DB error)"})
 		return
 	}
 
@@ -69,7 +56,15 @@ func CreateRule(c *gin.Context) {
 }
 
 func ListRules(c *gin.Context) {
+	userID, _ := c.Get("userID")
 	jobID := c.Param("id")
+
+	// Verify Ownership
+	var dummyID string
+	if err := db.GetDB().QueryRow("SELECT id FROM jobs WHERE id = $1 AND user_id = $2", jobID, userID).Scan(&dummyID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Job not found"})
+		return
+	}
 
 	rows, err := db.GetDB().Query(`
 		SELECT id, metric_name, operator, threshold_value, severity, created_at 
@@ -88,8 +83,6 @@ func ListRules(c *gin.Context) {
 		if err := rows.Scan(&r.ID, &r.MetricName, &r.Operator, &r.ThresholdValue, &r.Severity, &r.CreatedAt); err != nil {
 			continue
 		}
-		// Since we didn't scan job_id, set it manually if needed, or omit. Model has JobID.
-		r.JobID = jobID
 		rules = append(rules, r)
 	}
 
@@ -101,16 +94,23 @@ func ListRules(c *gin.Context) {
 }
 
 func DeleteRule(c *gin.Context) {
+	userID, _ := c.Get("userID")
 	id := c.Param("id")
-	res, err := db.GetDB().Exec("DELETE FROM rules WHERE id = $1", id)
+
+	// Verify Ownership via Join (Rule -> Job -> User)
+	res, err := db.GetDB().Exec(`
+		DELETE FROM rules 
+		WHERE id = $1 
+		AND job_id IN (SELECT id FROM jobs WHERE user_id = $2)
+	`, id, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
 	}
 
-	rows, _ := res.RowsAffected()
-	if rows == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Rule not found"})
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Rule not found or permission denied"})
 		return
 	}
 

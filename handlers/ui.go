@@ -4,19 +4,37 @@ import (
 	"cronmonitor/db"
 	"cronmonitor/models"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
+func ShowLogin(c *gin.Context) {
+	c.HTML(http.StatusOK, "login.html", gin.H{})
+}
+
+func ShowSignup(c *gin.Context) {
+	c.HTML(http.StatusOK, "signup.html", gin.H{})
+}
+
 func ShowJobs(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	userEmail, _ := c.Get("userEmail") // for header
+
+	if !exists {
+		// Should be handled by middleware redirection if protected,
+		// but if middleware just passed (system user), it works.
+		// If real auth failure, middleware would have aborted.
+		// Wait, middleware sets "userID" even for system fallback.
+	}
+
 	rows, err := db.GetDB().Query(`
-		SELECT id, name, ping_key, created_at 
+		SELECT id, name, ping_key, schedule, timezone, grace_minutes, created_at 
 		FROM jobs 
+		WHERE user_id = $1
 		ORDER BY created_at DESC
-	`)
+	`, userID)
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"error": "Database error"})
 		return
@@ -52,8 +70,9 @@ func ShowJobs(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "jobs.html", gin.H{
-		"Title": "Jobs",
-		"Jobs":  jobs,
+		"Title":     "Jobs",
+		"Jobs":      jobs,
+		"UserEmail": userEmail,
 	})
 }
 
@@ -61,13 +80,13 @@ func ShowJobDetail(c *gin.Context) {
 	id := c.Param("id")
 	var job models.Job
 
-	err := db.GetDB().QueryRow(`
-		SELECT id, name, ping_key, COALESCE(schedule, ''), COALESCE(timezone, 'UTC'), COALESCE(grace_minutes, 30), created_at 
-		FROM jobs WHERE id = $1
-	`, id).Scan(&job.ID, &job.Name, &job.PingKey, &job.Schedule, &job.Timezone, &job.GraceMinutes, &job.CreatedAt)
+	userID, _ := c.Get("userID")
+	userEmail, _ := c.Get("userEmail")
+
+	err := db.GetDB().QueryRow("SELECT id, name, ping_key, COALESCE(schedule, ''), COALESCE(timezone, 'UTC'), COALESCE(grace_minutes, 30), created_at FROM jobs WHERE id = $1 AND user_id = $2", id, userID).Scan(&job.ID, &job.Name, &job.PingKey, &job.Schedule, &job.Timezone, &job.GraceMinutes, &job.CreatedAt)
 
 	if err == sql.ErrNoRows {
-		c.String(http.StatusNotFound, "Job not found")
+		c.HTML(http.StatusNotFound, "error.html", gin.H{"error": "Job not found"})
 		return
 	} else if err != nil {
 		c.String(http.StatusInternalServerError, "Database error")
@@ -76,33 +95,23 @@ func ShowJobDetail(c *gin.Context) {
 
 	job.PingURL = fmt.Sprintf("http://%s/ping/%s", c.Request.Host, job.PingKey)
 
-	// Fetch History
-	rows, err := db.GetDB().Query(`
-		SELECT status, duration_ms, metrics, stderr, created_at 
-		FROM job_runs 
-		WHERE job_id = $1 
-		ORDER BY created_at DESC 
-		LIMIT 10
-	`, id)
-
-	var runs []models.JobRun
-	if err == nil {
+	// Fetch Runs (Limit 50)
+	rows, err := db.GetDB().Query("SELECT id, status, duration_ms, created_at FROM job_runs WHERE job_id = $1 ORDER BY created_at DESC LIMIT 50", id)
+	if err != nil {
+		fmt.Printf("Error fetching runs: %v\n", err)
+	} else {
 		defer rows.Close()
 		for rows.Next() {
 			var r models.JobRun
-			var metricsRaw []byte
-			if err := rows.Scan(&r.Status, &r.DurationMs, &metricsRaw, &r.Stderr, &r.CreatedAt); err == nil {
-				if len(metricsRaw) > 0 {
-					_ = json.Unmarshal(metricsRaw, &r.Metrics)
-				}
-				runs = append(runs, r)
+			if err := rows.Scan(&r.ID, &r.Status, &r.DurationMs, &r.CreatedAt); err == nil {
+				job.JobRuns = append(job.JobRuns, r)
 			}
 		}
 	}
 
 	c.HTML(http.StatusOK, "job_detail.html", gin.H{
-		"Title": job.Name,
-		"Job":   job,
-		"Runs":  runs,
+		"Job":       job,
+		"UserEmail": userEmail,
+		"Runs":      job.JobRuns,
 	})
 }

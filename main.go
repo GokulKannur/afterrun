@@ -4,9 +4,11 @@ import (
 	"cronmonitor/config"
 	"cronmonitor/db"
 	"cronmonitor/handlers"
+	"cronmonitor/middleware"
 	"cronmonitor/services"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
@@ -61,32 +63,53 @@ func main() {
 
 	r := gin.Default()
 	r.LoadHTMLGlob("templates/*")
-	r.Static("/static", "./static")
+	// r.Static("/static", "./static") // Removed
 
-	// Phase 1.x
+	// Routes
+	r.GET("/static/*filepath", func(c *gin.Context) {
+		c.FileFromFS(c.Param("filepath"), http.Dir("./static"))
+	})
+
+	// Public Webhook (MUST be public)
 	r.POST("/ping/:ping_key", handlers.PingHandler)
 
-	// Phase 2.1: Read-Only UI
-	r.GET("/", handlers.ShowJobs)
-	r.GET("/jobs/:id", handlers.ShowJobDetail)
-
-	// Phase 2: Job Management API
+	// Auth Routes (Public)
 	api := r.Group("/api")
+	api.POST("/auth/signup", handlers.Signup)
+	api.POST("/auth/login", handlers.Login)
+	api.GET("/auth/me", middleware.AuthRequired(), handlers.Me)
+
+	// UI Routes (SSR - Auth via Cookie inside Handlers is handled by middleware wrapper if we choose)
+	// For Phase 4, we wrap UI in middleware too, as it supports Cookie auth fallback.
+	ui := r.Group("/")
+	ui.Use(middleware.AuthRequired())
 	{
-		api.POST("/jobs", handlers.CreateJob)
-		api.GET("/jobs", handlers.ListJobs)
-		api.GET("/jobs/:id", handlers.GetJob)
-		api.DELETE("/jobs/:id", handlers.DeleteJob)
+		ui.GET("/", handlers.ShowJobs)
+		ui.GET("/jobs/:id", handlers.ShowJobDetail)
+	}
 
-		api.GET("/jobs/:id/runs", handlers.GetJobRuns)
+	// Open UI Routes
+	r.GET("/login", handlers.ShowLogin)
+	r.GET("/signup", handlers.ShowSignup)
 
-		api.POST("/jobs/:id/rules", handlers.CreateRule)
-		api.GET("/jobs/:id/rules", handlers.ListRules)
-		api.DELETE("/rules/:id", handlers.DeleteRule)
+	// Protected API Routes
+	protected := api.Group("/")
+	protected.Use(middleware.AuthRequired())
+	{
+		protected.POST("/jobs", handlers.CreateJob)
+		protected.GET("/jobs", handlers.ListJobs)
+		protected.GET("/jobs/:id", handlers.GetJob)
+		protected.DELETE("/jobs/:id", handlers.DeleteJob)
+
+		protected.GET("/jobs/:id/runs", handlers.GetJobRuns)
+
+		protected.POST("/jobs/:id/rules", handlers.CreateRule)
+		protected.GET("/jobs/:id/rules", handlers.ListRules)
+		protected.DELETE("/rules/:id", handlers.DeleteRule)
 
 		// Phase 3.5: Stats (Read-Only)
-		api.GET("/stats/overview", handlers.GetStatsOverview)
-		api.GET("/stats/job/:id", handlers.GetJobStats)
+		protected.GET("/stats/overview", handlers.GetStatsOverview)
+		protected.GET("/stats/job/:id", handlers.GetJobStats)
 	}
 
 	port := os.Getenv("PORT")

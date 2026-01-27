@@ -14,6 +14,7 @@ type Job struct {
 	PingURL      string    `json:"ping_url,omitempty"` // Computed field
 	CreatedAt    time.Time `json:"created_at"`
 	LastRun      *JobRun   `json:"last_run,omitempty"` // For list view
+	JobRuns      []JobRun  `json:"job_runs,omitempty"` // For UI Detail View
 }
 
 type JobRun struct {

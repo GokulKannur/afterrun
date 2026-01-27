@@ -5,103 +5,57 @@ import (
 	"cronmonitor/models"
 	"crypto/rand"
 	"database/sql"
-	"encoding/json"
+	"encoding/hex"
 	"fmt"
-	"math/big"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
-// Helper to generate secure random string
-func generatePingKey() (string, error) {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	length := 16
-	b := make([]byte, length)
-	for i := range b {
-		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
-		if err != nil {
-			return "", err
-		}
-		b[i] = charset[num.Int64()]
-	}
-	return string(b), nil
-}
-
 func CreateJob(c *gin.Context) {
-	var req struct {
-		Name         string `json:"name"`
-		Schedule     string `json:"schedule"`
-		Timezone     string `json:"timezone"`
-		GraceMinutes int    `json:"grace_minutes"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+	userID, _ := c.Get("userID")
+	var job models.Job
+	if err := c.ShouldBindJSON(&job); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	if req.Name == "" || len(req.Name) > 255 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Name is required and must be under 255 chars"})
+	// Generate a secure random ping key
+	pingKeyBytes := make([]byte, 16)
+	_, err := rand.Read(pingKeyBytes)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate key"})
 		return
 	}
-	if req.GraceMinutes < 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Grace minutes must be non-negative"})
-		return
-	}
-
-	// Generate Key with retry on collision
-	var pingKey string
-	for {
-		key, err := generatePingKey()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate key"})
-			return
-		}
-		// Check uniqueness
-		var exists int
-		err = db.GetDB().QueryRow("SELECT 1 FROM jobs WHERE ping_key = $1", key).Scan(&exists)
-		if err == sql.ErrNoRows {
-			pingKey = key
-			break
-		}
-	}
+	job.PingKey = hex.EncodeToString(pingKeyBytes)
 
 	// Insert
-	var jobID string
-	var createdAt string
-	err := db.GetDB().QueryRow(`
-		INSERT INTO jobs (name, ping_key, schedule, timezone, grace_minutes)
-		VALUES ($1, $2, $3, $4, $5)
+	err = db.GetDB().QueryRow(`
+		INSERT INTO jobs (name, ping_key, schedule, timezone, grace_minutes, user_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, created_at
-	`, req.Name, pingKey, req.Schedule, req.Timezone, req.GraceMinutes).Scan(&jobID, &createdAt)
+	`, job.Name, job.PingKey, job.Schedule, job.Timezone, job.GraceMinutes, userID).Scan(&job.ID, &job.CreatedAt)
 
 	if err != nil {
 		fmt.Printf("Error creating job: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create job"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
 	}
 
-	pingURL := fmt.Sprintf("http://%s/ping/%s", c.Request.Host, pingKey)
+	job.PingURL = fmt.Sprintf("http://%s/ping/%s", c.Request.Host, job.PingKey)
 
-	c.JSON(http.StatusCreated, gin.H{
-		"id":            jobID,
-		"name":          req.Name,
-		"ping_key":      pingKey,
-		"ping_url":      pingURL,
-		"schedule":      req.Schedule,
-		"timezone":      req.Timezone,
-		"grace_minutes": req.GraceMinutes,
-		"created_at":    createdAt,
-	})
+	c.JSON(http.StatusCreated, job)
 }
 
 func ListJobs(c *gin.Context) {
+	userID, _ := c.Get("userID")
+
 	rows, err := db.GetDB().Query(`
 		SELECT id, name, ping_key, schedule, timezone, grace_minutes, created_at 
 		FROM jobs 
+		WHERE user_id = $1
 		ORDER BY created_at DESC
-	`)
+	`, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
@@ -147,14 +101,10 @@ func ListJobs(c *gin.Context) {
 }
 
 func GetJob(c *gin.Context) {
+	userID, _ := c.Get("userID")
 	id := c.Param("id")
-	var j models.Job
-
-	// Use COALESCE to handle potential nulls if DB has them, though our insert sets values.
-	err := db.GetDB().QueryRow(`
-		SELECT id, name, ping_key, COALESCE(schedule, ''), COALESCE(timezone, 'UTC'), COALESCE(grace_minutes, 30), created_at 
-		FROM jobs WHERE id = $1
-	`, id).Scan(&j.ID, &j.Name, &j.PingKey, &j.Schedule, &j.Timezone, &j.GraceMinutes, &j.CreatedAt)
+	var job models.Job
+	err := db.GetDB().QueryRow("SELECT id, name, ping_key, schedule, timezone, grace_minutes, created_at FROM jobs WHERE id = $1 AND user_id = $2", id, userID).Scan(&job.ID, &job.Name, &job.PingKey, &job.Schedule, &job.Timezone, &job.GraceMinutes, &job.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Job not found"})
@@ -165,21 +115,28 @@ func GetJob(c *gin.Context) {
 		return
 	}
 
-	j.PingURL = fmt.Sprintf("http://%s/ping/%s", c.Request.Host, j.PingKey)
+	job.PingURL = fmt.Sprintf("http://%s/ping/%s", c.Request.Host, job.PingKey)
 
-	c.JSON(http.StatusOK, j)
+	c.JSON(http.StatusOK, job)
 }
 
 func GetJobRuns(c *gin.Context) {
-	id := c.Param("id")
+	userID, _ := c.Get("userID")
+	jobID := c.Param("id")
+	// Verify ownership first
+	var dummyID string
+	if err := db.GetDB().QueryRow("SELECT id FROM jobs WHERE id = $1 AND user_id = $2", jobID, userID).Scan(&dummyID); err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
 
 	rows, err := db.GetDB().Query(`
-		SELECT id, status, duration_ms, metrics, stderr, created_at 
+		SELECT id, status, duration_ms, created_at 
 		FROM job_runs 
 		WHERE job_id = $1 
 		ORDER BY created_at DESC 
-		LIMIT 100
-	`, id)
+		LIMIT 50
+	`, jobID)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
@@ -190,13 +147,9 @@ func GetJobRuns(c *gin.Context) {
 	var runs []models.JobRun
 	for rows.Next() {
 		var r models.JobRun
-		var metricsRaw []byte // metrics is JSONB
-		if err := rows.Scan(&r.ID, &r.Status, &r.DurationMs, &metricsRaw, &r.Stderr, &r.CreatedAt); err != nil {
+		// metrics and stderr are not selected in the new query
+		if err := rows.Scan(&r.ID, &r.Status, &r.DurationMs, &r.CreatedAt); err != nil {
 			continue
-		}
-		// Unmarshal metrics bytes to map
-		if len(metricsRaw) > 0 {
-			_ = json.Unmarshal(metricsRaw, &r.Metrics) // Ignore error, best effort
 		}
 		runs = append(runs, r)
 	}
@@ -209,14 +162,15 @@ func GetJobRuns(c *gin.Context) {
 }
 
 func DeleteJob(c *gin.Context) {
+	userID, _ := c.Get("userID")
 	id := c.Param("id")
-	res, err := db.GetDB().Exec("DELETE FROM jobs WHERE id = $1", id)
+	result, err := db.GetDB().Exec("DELETE FROM jobs WHERE id = $1 AND user_id = $2", id, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
 	}
 
-	rowsAffected, _ := res.RowsAffected()
+	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Job not found"})
 		return

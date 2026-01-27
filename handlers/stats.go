@@ -19,18 +19,19 @@ func GetStatsOverview(c *gin.Context) {
 	}
 
 	dbConn := db.GetDB()
+	userID, _ := c.Get("userID")
 
 	// 1. Counts
-	_ = dbConn.QueryRow("SELECT COUNT(*) FROM jobs").Scan(&stats.TotalJobs)
-	_ = dbConn.QueryRow("SELECT COUNT(*) FROM job_runs").Scan(&stats.TotalRuns)
-	_ = dbConn.QueryRow("SELECT COUNT(*) FROM alerts").Scan(&stats.TotalAlerts)
+	_ = dbConn.QueryRow("SELECT COUNT(*) FROM jobs WHERE user_id = $1", userID).Scan(&stats.TotalJobs)
+	_ = dbConn.QueryRow("SELECT COUNT(*) FROM job_runs WHERE job_id IN (SELECT id FROM jobs WHERE user_id = $1)", userID).Scan(&stats.TotalRuns)
+	_ = dbConn.QueryRow("SELECT COUNT(*) FROM alerts WHERE job_id IN (SELECT id FROM jobs WHERE user_id = $1)", userID).Scan(&stats.TotalAlerts)
 
 	// 2. Success Runs
-	_ = dbConn.QueryRow("SELECT COUNT(*) FROM job_runs WHERE status = 'ok'").Scan(&stats.SuccessRuns)
+	_ = dbConn.QueryRow("SELECT COUNT(*) FROM job_runs WHERE status = 'ok' AND job_id IN (SELECT id FROM jobs WHERE user_id = $1)", userID).Scan(&stats.SuccessRuns)
 
 	// 3. Avg Duration (handle NULL if no runs)
 	var avgDuration *float64
-	_ = dbConn.QueryRow("SELECT AVG(duration_ms) FROM job_runs WHERE duration_ms IS NOT NULL").Scan(&avgDuration)
+	_ = dbConn.QueryRow("SELECT AVG(duration_ms) FROM job_runs WHERE duration_ms IS NOT NULL AND job_id IN (SELECT id FROM jobs WHERE user_id = $1)", userID).Scan(&avgDuration)
 	if avgDuration != nil {
 		stats.AvgDurationMs = *avgDuration
 	}
@@ -48,6 +49,16 @@ func GetStatsOverview(c *gin.Context) {
 // Read-only job stats
 func GetJobStats(c *gin.Context) {
 	jobID := c.Param("id")
+	userID, _ := c.Get("userID")
+
+	dbConn := db.GetDB()
+
+	// Verify Ownership
+	var dummyID string
+	if err := dbConn.QueryRow("SELECT id FROM jobs WHERE id = $1 AND user_id = $2", jobID, userID).Scan(&dummyID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Job not found"})
+		return
+	}
 
 	var stats struct {
 		RunCount      int     `json:"run_count"`
@@ -58,7 +69,7 @@ func GetJobStats(c *gin.Context) {
 		P95DurationMs float64 `json:"p95_duration_ms"` // Ad-hoc percentile
 	}
 
-	dbConn := db.GetDB()
+	// dbConn := db.GetDB() // Already declared above
 
 	// 1. Basic Counts
 	_ = dbConn.QueryRow("SELECT COUNT(*) FROM job_runs WHERE job_id = $1", jobID).Scan(&stats.RunCount)
