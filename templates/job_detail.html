@@ -1,66 +1,263 @@
+Job detail · HTML
+Copy
+
 {{ template "header.html" . }}
 
-<div class="page-header">
-    <a href="/" class="back-link">&larr; Back to Jobs</a>
-    <h2>{{.Job.Name}}</h2>
-</div>
-
-<div class="grid-layout">
-    <div class="card job-meta">
-        <h3>Configuration</h3>
-        <dl>
-            <dt>Ping URL</dt>
-            <dd><code class="copyable">{{.Job.PingURL}}</code></dd>
-
-            <dt>Schedule</dt>
-            <dd>{{if .Job.Schedule}}{{.Job.Schedule}}{{else}}<em>Not set</em>{{end}}</dd>
-
-            <dt>Timezone</dt>
-            <dd>{{.Job.Timezone}}</dd>
-
-            <dt>Grace Period</dt>
-            <dd>{{.Job.GraceMinutes}} min</dd>
-        </dl>
+<div class="container">
+    <div class="dashboard-header">
+        <div>
+            <div class="text-muted mb-sm" style="font-size: 0.875rem;">
+                <a href="/">Jobs</a> / {{.Job.Name}}
+            </div>
+            <h1>{{.Job.Name}}</h1>
+        </div>
+        {{ if .WriteUIEnabled }}
+        <div>
+            <button onclick="deleteJob()" class="btn btn-danger btn-sm">Delete Job</button>
+        </div>
+        {{ end }}
     </div>
 
-    <div class="card">
-        <h3>Recent Runs</h3>
-        <table class="runs-table">
-            <thead>
-                <tr>
-                    <th>Status</th>
-                    <th>Time</th>
-                    <th>Duration</th>
-                    <th>Metrics</th>
-                </tr>
-            </thead>
-            <tbody>
-                {{range .Runs}}
-                <tr>
-                    <td>
-                        {{if eq .Status "ok"}}
-                        <span class="badge badge-ok">OK</span>
-                        {{else}}
-                        <span class="badge badge-fail">FAIL</span>
-                        {{end}}
-                    </td>
-                    <td>{{.CreatedAt.Format "Jan 02, 15:04:05"}}</td>
-                    <td>{{.DurationMs}}ms</td>
-                    <td>
-                        <pre class="metric-json">{{.Metrics}}</pre>
-                        {{if .Stderr}}
-                        <div class="stderr-preview">stderr: {{.Stderr}}</div>
-                        {{end}}
-                    </td>
-                </tr>
-                {{else}}
-                <tr>
-                    <td colspan="4" class="empty-state">No runs recorded.</td>
-                </tr>
-                {{end}}
-            </tbody>
-        </table>
+    <!-- Ping URL Section -->
+    <div class="ping-url-section">
+        <h3>Webhook Endpoint</h3>
+        <p>Make a POST request to this URL to record a run.</p>
+        <div class="ping-url-container">
+            <code id="pingUrl">{{.Job.PingURL}}</code>
+            <button class="btn-copy-ping" onclick="copyPingUrl()" id="copyText">Copy URL</button>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 2rem;">
+        <!-- Left: Config -->
+        <div>
+            <div class="card mb-xl">
+                <h3>Configuration</h3>
+                <div class="form-group mb-md">
+                    <label>Schedule</label>
+                    <div style="font-family: var(--font-mono);">{{if .Job.Schedule}}{{.Job.Schedule}}{{else}}Not
+                        set{{end}}</div>
+                </div>
+                <div class="form-group mb-md">
+                    <label>Grace Period</label>
+                    <div>{{.Job.GraceMinutes}} minutes</div>
+                </div>
+                <div class="form-group mb-0">
+                    <label>Timezone</label>
+                    <div>{{.Job.Timezone}}</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="flex justify-between items-center mb-lg">
+                    <h3 class="mb-0">Health Rules</h3>
+                    {{ if .WriteUIEnabled }}
+                    <button onclick="showCreateRuleModal()" class="btn btn-primary btn-sm">+ Add</button>
+                    {{ end }}
+                </div>
+
+                <div class="rules-list">
+                    {{range .Rules}}
+                    <div class="rule-card" style="padding: 1rem;">
+                        <div class="rule-expression">
+                            <span style="font-weight: 500;">{{.MetricName}}</span>
+                            <span class="operator">{{.Operator}}</span>
+                            <span>{{.ThresholdValue}}</span>
+                        </div>
+                        <div class="flex items-center gap-sm">
+                            {{if eq .Severity "critical"}}
+  <span class="severity-badge severity-critical">{{.Severity}}</span>
+{{else}}
+  <span class="severity-badge severity-warning">{{.Severity}}</span>
+{{end}}
+
+
+                            {{ if $.WriteUIEnabled }}
+                            <button onclick="deleteRule('{{.ID}}')" class="btn-delete">&times;</button>
+                            {{ end }}
+                        </div>
+                    </div>
+                    {{else}}
+                    <div class="text-center text-muted" style="padding: 2rem;">
+                        No rules defined
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: History -->
+        <div>
+            <div class="card">
+                <h3 class="mb-lg">Run History</h3>
+                <div class="jobs-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Time</th>
+                                <th>Duration</th>
+                                <th>Output</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .Runs}}
+                            <tr>
+                                <td>
+                                    {{if eq .Status "ok"}}
+                                    <span class="badge badge-success">OK</span>
+                                    {{else}}
+                                    <span class="badge badge-error">FAIL</span>
+                                    {{end}}
+                                </td>
+                                <td>{{.CreatedAt.Format "Jan 02, 15:04:05"}}</td>
+                                <td>{{.DurationMs}}ms</td>
+                                <td>
+                                    {{ if .Metrics }}
+                                    <code>{{.Metrics}}</code>
+                                    {{ end }}
+                                    {{ if .Stderr }}
+                                    <code class="text-error">{{.Stderr}}</code>
+                                    {{ end }}
+                                </td>
+                            </tr>
+                            {{else}}
+                            <tr>
+                                <td colspan="4" class="text-center" style="padding: 3rem;">
+                                    <div class="text-muted">No runs recorded yet</div>
+                                </td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
-{{ template "footer.html" . }}
+<!-- Create Rule Modal -->
+<div id="createRuleModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Add Health Rule</h3>
+            <button class="close" onclick="closeCreateRuleModal()">&times;</button>
+        </div>
+        <form id="createRuleForm">
+            <p class="text-muted mb-md">Define conditions that mark this job as unhealthy.</p>
+
+            <div class="form-group">
+                <label>Metric Name</label>
+                <input type="text" name="metric_name" placeholder="e.g. rows_processed" required>
+            </div>
+
+            <div class="form-group">
+                <label>Condition</label>
+                <div style="display: flex; gap: 12px;">
+                    <select name="operator" required style="flex: 1;">
+                        <option value="==">is equal to (==)</option>
+                        <option value="!=">is not equal to (!=)</option>
+                        <option value="&lt;">is less than (&lt;)</option>
+                        <option value=">">is greater than (>)</option>
+                    </select>
+                    <input type="number" name="threshold_value" placeholder="0" step="any" required style="flex: 1;">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Severity</label>
+                <select name="severity" required>
+                    <option value="critical">Critical (Immediate Alert)</option>
+                    <option value="warning">Warning (Monitor)</option>
+                </select>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" onclick="closeCreateRuleModal()" class="btn btn-secondary">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Rule</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    const jobID = "{{.Job.ID}}";
+
+    function copyPingUrl() {
+        const url = document.getElementById('pingUrl').textContent;
+        navigator.clipboard.writeText(url).then(() => {
+            const btn = document.getElementById('copyText');
+            btn.textContent = 'Copied!';
+            setTimeout(() => btn.textContent = 'Copy URL', 2000);
+            showToast('Ping URL copied');
+        });
+    }
+
+    function showCreateRuleModal() {
+        document.getElementById('createRuleModal').style.display = 'block';
+        document.body.classList.add('modal-open');
+    }
+
+    function closeCreateRuleModal() {
+        document.getElementById('createRuleModal').style.display = 'none';
+        document.body.classList.remove('modal-open');
+        document.getElementById('createRuleForm').reset();
+    }
+
+    async function deleteJob() {
+        if (!confirm('Are you sure you want to delete this job?\n\nThis cannot be undone.')) return;
+        try {
+            const res = await authFetch(`/api/jobs/${jobID}`, { method: 'DELETE' });
+            if (res.ok) {
+                showToast('Job deleted');
+                setTimeout(() => window.location.href = '/', 1000);
+            } else {
+                showToast('Failed to delete job', true);
+            }
+        } catch (e) { showToast('Network error', true); }
+    }
+
+    async function deleteRule(ruleID) {
+        if (!confirm('Delete this rule?')) return;
+        try {
+            const res = await authFetch(`/api/rules/${ruleID}`, { method: 'DELETE' });
+            if (res.ok) {
+                showToast('Rule deleted');
+                setTimeout(() => location.reload(), 800);
+            } else {
+                showToast('Failed to delete rule', true);
+            }
+        } catch (e) { showToast('Network error', true); }
+    }
+
+    document.getElementById('createRuleForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = {
+            metric_name: formData.get('metric_name'),
+            operator: formData.get('operator'),
+            threshold_value: parseFloat(formData.get('threshold_value')),
+            severity: formData.get('severity')
+        };
+
+        try {
+            const res = await authFetch(`/api/jobs/${jobID}/rules`, {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+            if (res.ok) {
+                showToast('Rule created');
+                closeCreateRuleModal();
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                const err = await res.json();
+                showToast(err.error || 'Failed to create rule', true);
+            }
+        } catch (e) { showToast('Network error', true); }
+    };
+
+    window.onclick = function (event) {
+        const m = document.getElementById('createRuleModal');
+        if (event.target == m) closeCreateRuleModal();
+    }
+</script>

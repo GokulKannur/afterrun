@@ -3,6 +3,7 @@ package handlers
 import (
 	"cronmonitor/db"
 	"cronmonitor/models"
+	"cronmonitor/services"
 	"net/http"
 	"os"
 	"time"
@@ -78,17 +79,32 @@ func Login(c *gin.Context) {
 
 func Me(c *gin.Context) {
 	userID, _ := c.Get("userID")
-	var user models.User
+
+	// Complex Fetch with Counts
+	var response struct {
+		models.User
+		JobCount int `json:"job_count"`
+		JobLimit int `json:"job_limit"`
+	}
+
 	err := db.GetDB().QueryRow(
 		`SELECT id, email, subscription_tier, subscription_status, created_at FROM users WHERE id = $1`,
 		userID,
-	).Scan(&user.ID, &user.Email, &user.SubscriptionTier, &user.SubscriptionStatus, &user.CreatedAt)
+	).Scan(&response.ID, &response.Email, &response.SubscriptionTier, &response.SubscriptionStatus, &response.CreatedAt)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
-	c.JSON(http.StatusOK, user)
+
+	// Enrich with Counts
+	if err := db.GetDB().QueryRow("SELECT COUNT(*) FROM jobs WHERE user_id = $1", userID).Scan(&response.JobCount); err != nil {
+		response.JobCount = 0
+	}
+
+	response.JobLimit = services.GetJobLimit(response.SubscriptionTier)
+
+	c.JSON(http.StatusOK, response)
 }
 
 func generateToken(id, email string) (string, error) {

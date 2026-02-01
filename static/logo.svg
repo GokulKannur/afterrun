@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <!-- Background Circle (Subtle) -->
+  <circle cx="100" cy="100" r="96" fill="#ecfdf5" stroke="#059669" stroke-width="8" />
+  
+  <!-- Pulse Line (Sharp, Thick, Emerald) -->
+  <path d="M40 100 H70 L90 140 L110 60 L130 100 H160" 
+        stroke="#059669" 
+        stroke-width="16" 
+        stroke-linecap="round" 
+        stroke-linejoin="round" />
+</svg>

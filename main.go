@@ -8,7 +8,6 @@ import (
 	"cronmonitor/services"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"time"
 
@@ -63,21 +62,23 @@ func main() {
 
 	r := gin.Default()
 	r.LoadHTMLGlob("templates/*")
-	// r.Static("/static", "./static") // Removed
-
-	// Routes
-	r.GET("/static/*filepath", func(c *gin.Context) {
-		c.FileFromFS(c.Param("filepath"), http.Dir("./static"))
-	})
+	r.Static("/static", "./static")
 
 	// Public Webhook (MUST be public)
+	// Support GET/HEAD for compatibility with wget/curl and browser testing
 	r.POST("/ping/:ping_key", handlers.PingHandler)
+	r.GET("/ping/:ping_key", handlers.PingHandler)
+	r.HEAD("/ping/:ping_key", handlers.PingHandler)
 
 	// Auth Routes (Public)
 	api := r.Group("/api")
 	api.POST("/auth/signup", handlers.Signup)
 	api.POST("/auth/login", handlers.Login)
 	api.GET("/auth/me", middleware.AuthRequired(), handlers.Me)
+
+	// Billing Routes (Simulated)
+	api.POST("/billing/upgrade", middleware.AuthRequired(), handlers.UpgradePlan)
+	api.POST("/billing/downgrade", middleware.AuthRequired(), handlers.DowngradePlan)
 
 	// UI Routes (SSR - Auth via Cookie inside Handlers is handled by middleware wrapper if we choose)
 	// For Phase 4, we wrap UI in middleware too, as it supports Cookie auth fallback.
@@ -111,6 +112,16 @@ func main() {
 		protected.GET("/stats/overview", handlers.GetStatsOverview)
 		protected.GET("/stats/job/:id", handlers.GetJobStats)
 	}
+
+	// DEBUG: Explicitly check if we can read the file
+	r.GET("/debug/css", func(c *gin.Context) {
+		content, err := os.ReadFile("static/style.css")
+		if err != nil {
+			c.String(500, "Error reading file: %v", err)
+			return
+		}
+		c.String(200, "File Read Success! Size: %d bytes\n\n%s", len(content), string(content))
+	})
 
 	port := os.Getenv("PORT")
 	if port == "" {

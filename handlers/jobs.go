@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"cronmonitor/config"
 	"cronmonitor/db"
 	"cronmonitor/models"
+	"cronmonitor/services"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -18,6 +20,36 @@ func CreateJob(c *gin.Context) {
 	if err := c.ShouldBindJSON(&job); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Billing/Limit Check
+	features := config.LoadFeatures()
+	if features.BillingEnabled {
+		// 1. Get User's Tier
+		var tier string
+		if err := db.GetDB().QueryRow("SELECT COALESCE(subscription_tier, 'free') FROM users WHERE id = $1", userID).Scan(&tier); err != nil {
+			tier = "free" // Default safe
+		}
+
+		// 2. Count Existing Jobs
+		var count int
+		if err := db.GetDB().QueryRow("SELECT COUNT(*) FROM jobs WHERE user_id = $1", userID).Scan(&count); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error checking limits"})
+			return
+		}
+
+		// 3. Compare
+		limit := services.GetJobLimit(tier)
+		if count >= limit {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":            "job_limit_reached",
+				"current":          count,
+				"limit":            limit,
+				"tier":             tier,
+				"upgrade_required": true,
+			})
+			return
+		}
 	}
 
 	// Generate a secure random ping key

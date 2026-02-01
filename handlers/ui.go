@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"cronmonitor/config"
 	"cronmonitor/db"
 	"cronmonitor/models"
+	"cronmonitor/services"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -44,9 +46,14 @@ func ShowJobs(c *gin.Context) {
 	var jobs []models.Job
 	for rows.Next() {
 		var j models.Job
-		if err := rows.Scan(&j.ID, &j.Name, &j.PingKey, &j.CreatedAt); err != nil {
+		// Fix Mismatch: Scan all 7 selected columns
+		if err := rows.Scan(&j.ID, &j.Name, &j.PingKey, &j.Schedule, &j.Timezone, &j.GraceMinutes, &j.CreatedAt); err != nil {
+			fmt.Println("Scan error:", err) // Debug log
 			continue
 		}
+
+		// Calculate Ping URL since it's used in the modal now
+		j.PingURL = fmt.Sprintf("http://%s/ping/%s", c.Request.Host, j.PingKey)
 
 		// N+1 for Last Run (Acceptable for MVP UI)
 		var lastRun models.JobRun
@@ -69,10 +76,25 @@ func ShowJobs(c *gin.Context) {
 		jobs = append(jobs, j)
 	}
 
+	// Billing Info
+	var tier string
+	if err := db.GetDB().QueryRow("SELECT COALESCE(subscription_tier, 'free') FROM users WHERE id = $1", userID).Scan(&tier); err != nil {
+		tier = "free"
+	}
+
+	count := len(jobs) // We just fetched them, so Count = len(jobs) is accurate for the view
+	limit := services.GetJobLimit(tier)
+
+	features := config.LoadFeatures()
+
 	c.HTML(http.StatusOK, "jobs.html", gin.H{
-		"Title":     "Jobs",
-		"Jobs":      jobs,
-		"UserEmail": userEmail,
+		"Title":          "Jobs",
+		"Jobs":           jobs,
+		"UserEmail":      userEmail,
+		"Tier":           tier,
+		"JobCount":       count,
+		"JobLimit":       limit,
+		"WriteUIEnabled": features.WriteUIEnabled,
 	})
 }
 
@@ -109,9 +131,12 @@ func ShowJobDetail(c *gin.Context) {
 		}
 	}
 
+	features := config.LoadFeatures()
+
 	c.HTML(http.StatusOK, "job_detail.html", gin.H{
-		"Job":       job,
-		"UserEmail": userEmail,
-		"Runs":      job.JobRuns,
+		"Job":            job,
+		"UserEmail":      userEmail,
+		"Runs":           job.JobRuns,
+		"WriteUIEnabled": features.WriteUIEnabled,
 	})
 }

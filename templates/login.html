@@ -1,26 +1,26 @@
-{{ template "header" . }}
+{{ template "header.html" . }}
 
-<div class="row justify-content-center">
-    <div class="col-md-5">
-        <div class="card p-4">
-            <h3 class="mb-4">Log In</h3>
+<div class="auth-container">
+    <div class="auth-card">
+        <h2>Log in to AfterRun</h2>
 
-            <div id="alert" class="alert alert-danger d-none"></div>
+        <div id="alert" class="badge badge-error mb-lg" style="display: none; width: 100%; justify-content: center;">
+        </div>
 
-            <form id="login-form">
-                <div class="mb-3">
-                    <label class="form-label">Email</label>
-                    <input type="email" name="email" class="form-control" required>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Password</label>
-                    <input type="password" name="password" class="form-control" required>
-                </div>
-                <button type="submit" class="btn btn-primary w-100">Log In</button>
-            </form>
-            <p class="mt-3 text-center">
-                Don't have an account? <a href="/signup">Sign up</a>
-            </p>
+        <form id="login-form">
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" name="email" required placeholder="name@company.com">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="password" required placeholder="••••••••">
+            </div>
+            <button type="submit" class="btn btn-primary">Log In</button>
+        </form>
+
+        <div class="auth-footer">
+            Don't have an account? <a href="/signup">Sign up</a>
         </div>
     </div>
 </div>
@@ -43,7 +43,7 @@
             if (!res.ok) {
                 const alert = document.getElementById('alert');
                 alert.textContent = result.error || 'Login failed';
-                alert.classList.remove('d-none');
+                alert.style.display = 'flex';
             } else {
                 // Cookie is set by server (HttpOnly)
                 window.location.href = result.redirect || '/';
@@ -54,4 +54,4 @@
     });
 </script>
 
-{{ template "footer" . }}
+{{ template "footer.html" . }}

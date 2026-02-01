@@ -1,53 +1,258 @@
 {{ template "header.html" . }}
 
-<div class="page-header">
-    <h2>All Jobs</h2>
+<div class="container">
+    <div class="dashboard-header">
+        <h1>Dashboard</h1>
+        <div class="flex gap-md">
+            {{ if eq .Tier "free" }}
+            <button onclick="upgradePlan('indie')" class="btn btn-secondary">Upgrade to Indie</button>
+            {{ else if eq .Tier "indie" }}
+            <button onclick="upgradePlan('team')" class="btn btn-secondary">Upgrade to Team</button>
+            {{ end }}
+
+            {{ if .WriteUIEnabled }}
+            <button class="btn btn-primary" onclick="showCreateJobModal()">+ New Job</button>
+            {{ end }}
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-number">{{ .JobCount }}</div>
+            <div class="stat-label">Monitored Jobs</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">100%</div>
+            <div class="stat-label">System Status</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ .Tier }}</div>
+            <div class="stat-label">Active Plan</div>
+        </div>
+    </div>
+
+    {{ if .Jobs }}
+    <div class="jobs-table">
+        <table>
+            <thead>
+                <tr>
+                    <th width="5%">Status</th>
+                    <th width="35%">Job Name</th>
+                    <th width="20%">Schedule</th>
+                    <th width="20%">Last Run</th>
+                    <th width="20%"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Jobs}}
+                <tr onclick="window.location.href='/jobs/{{.ID}}'">
+                    <td>
+                        {{if .LastRun}}
+                        {{if eq .LastRun.Status "ok"}}
+                        <span class="status-dot status-ok" title="Healthy"></span>
+                        {{else}}
+                        <span class="status-dot status-fail" title="Failing"></span>
+                        {{end}}
+                        {{else}}
+                        <span class="status-dot status-unknown" title="No Data"></span>
+                        {{end}}
+                    </td>
+                    <td>
+                        <div style="font-weight: 500;">{{.Name}}</div>
+                    </td>
+                    <td>
+                        <code>{{.Schedule}}</code>
+                    </td>
+                    <td class="text-muted" style="font-size: 0.875rem;">
+                        {{if .LastRun}}
+                        {{.LastRun.CreatedAt.Format "Jan 02, 15:04"}}
+                        {{else}}
+                        Never
+                        {{end}}
+                    </td>
+                    <td class="text-right">
+                        <span class="btn-ghost btn-sm">&rarr;</span>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{ else }}
+    <div class="empty-state">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
+            </path>
+        </svg>
+        <h3>No active jobs</h3>
+        <p>Create a job to get a unique ping URL and start monitoring your tasks.</p>
+        {{ if .WriteUIEnabled }}
+        <button class="btn btn-primary" onclick="showCreateJobModal()">Create Job</button>
+        {{ end }}
+    </div>
+    {{ end }}
 </div>
 
-<div class="card">
-    <table class="jobs-table">
-        <thead>
-            <tr>
-                <th>Status</th>
-                <th>Job Name</th>
-                <th>Last Run</th>
-                <th>Action</th>
-            </tr>
-        </thead>
-        <tbody>
-            {{range .Jobs}}
-            <tr>
-                <td>
-                    {{if .LastRun}}
-                    {{if eq .LastRun.Status "ok"}}
-                    <span class="status-dot status-ok" title="OK"></span>
-                    {{else}}
-                    <span class="status-dot status-fail" title="Failed"></span>
-                    {{end}}
-                    {{else}}
-                    <span class="status-dot status-none" title="Never Ran"></span>
-                    {{end}}
-                </td>
-                <td class="job-name">{{.Name}}</td>
-                <td class="job-time">
-                    {{if .LastRun}}
-                    {{.LastRun.CreatedAt.Format "Jan 02, 15:04 MST"}}
-                    <div class="sub-text">{{.LastRun.DurationMs}}ms</div>
-                    {{else}}
-                    <span class="sub-text">Never</span>
-                    {{end}}
-                </td>
-                <td>
-                    <a href="/jobs/{{.ID}}" class="btn-link">View Details &rarr;</a>
-                </td>
-            </tr>
-            {{else}}
-            <tr>
-                <td colspan="4" class="empty-state">No jobs found.</td>
-            </tr>
-            {{end}}
-        </tbody>
-    </table>
+<script>
+    async function upgradePlan(plan) {
+        if (!confirm(`Upgrade to ${plan} plan?`)) return;
+        try {
+            const res = await fetch('/api/billing/upgrade', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ plan: plan })
+            });
+            if (res.ok) window.location.reload();
+            else alert((await res.json()).error);
+        } catch (e) { alert(e); }
+    }
+
+    async function downgradePlan() {
+        if (!confirm("Downgrade to Free? You won't create new jobs if over limit.")) return;
+        try {
+            const res = await fetch('/api/billing/downgrade', { method: 'POST' });
+            if (res.ok) window.location.reload();
+            else alert((await res.json()).error);
+        } catch (e) { alert(e); }
+    }
+</script>
+
+<!-- Create Job Modal -->
+<div id="createJobModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Create New Job</h3>
+            <button class="close" onclick="closeCreateJobModal()">&times;</button>
+        </div>
+        <form id="createJobForm">
+            <div class="form-group">
+                <label for="jobName">Job Name</label>
+                <input type="text" id="jobName" name="name" placeholder="Daily Database Backup" required minlength="3">
+                <small>A descriptive name for this job</small>
+            </div>
+
+            <div class="form-group">
+                <label for="jobSchedule">Schedule (Cron)</label>
+                <input type="text" id="jobSchedule" name="schedule" placeholder="0 2 * * *" required>
+                <small>Examples: <code>0 2 * * *</code> (Daily 2am)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="jobTimezone">Timezone</label>
+                <select id="jobTimezone" name="timezone">
+                    <option value="UTC">UTC</option>
+                    <option value="America/Los_Angeles">America/Los Angeles</option>
+                    <option value="America/New_York">America/New York</option>
+                    <option value="Europe/London">Europe/London</option>
+                    <option value="Asia/Tokyo">Asia/Tokyo</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="jobGrace">Grace Period (minutes)</label>
+                <input type="number" id="jobGrace" name="grace_minutes" value="30" min="1" max="1440">
+            </div>
+
+            <div class="form-actions">
+                <button type="button" onclick="closeCreateJobModal()" class="btn btn-secondary">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Job</button>
+            </div>
+        </form>
+    </div>
 </div>
+
+<!-- Ping URL Modal -->
+<div id="pingUrlModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Job Created! 🎉</h3>
+            <button class="close" onclick="closePingUrlModal()">&times;</button>
+        </div>
+
+        <p>Your job <strong id="newJobName"></strong> has been created.</p>
+
+        <div class="ping-url-container">
+            <code id="newPingUrl"></code>
+            <button onclick="copyNewPingUrl()" class="btn-copy-ping">
+                <span id="copyBtnText">Copy</span>
+            </button>
+        </div>
+        <p class="text-muted" style="margin-top: 16px;">Use this URL to report runs (POST only).</p>
+
+        <div class="form-actions">
+            <button onclick="closePingUrlModal()" class="btn btn-primary">Got it!</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    function showCreateJobModal() {
+        document.getElementById('createJobModal').style.display = 'block';
+    }
+
+    function closeCreateJobModal() {
+        document.getElementById('createJobModal').style.display = 'none';
+        document.getElementById('createJobForm').reset();
+    }
+
+    function showPingUrlModal(jobName, pingUrl) {
+        document.getElementById('newJobName').textContent = jobName;
+        document.getElementById('newPingUrl').textContent = pingUrl;
+        document.getElementById('pingUrlModal').style.display = 'block';
+    }
+
+    function closePingUrlModal() {
+        document.getElementById('pingUrlModal').style.display = 'none';
+        window.location.reload();
+    }
+
+    function copyNewPingUrl() {
+        const url = document.getElementById('newPingUrl').textContent;
+        navigator.clipboard.writeText(url).then(() => {
+            document.getElementById('copyBtnText').textContent = 'Copied!';
+        });
+    }
+
+    document.getElementById('createJobForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = {
+            name: formData.get('name'),
+            schedule: formData.get('schedule'),
+            timezone: formData.get('timezone'),
+            grace_minutes: parseInt(formData.get('grace_minutes'))
+        };
+
+        if (data.schedule.trim().split(/\s+/).length !== 5) {
+            showToast('Invalid cron expression. Must have 5 parts.', true);
+            return;
+        }
+
+        try {
+            const res = await authFetch('/api/jobs', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+
+            if (res.ok) {
+                closeCreateJobModal();
+                showPingUrlModal(result.name, result.ping_url);
+            } else {
+                showToast(result.error || 'Failed to create job', true);
+            }
+        } catch (err) {
+            showToast('Network error', true);
+        }
+    };
+
+    window.onclick = function (event) {
+        if (event.target.classList.contains('modal')) {
+            event.target.style.display = 'none';
+        }
+    }
+</script>
 
 {{ template "footer.html" . }}
